@@ -200,9 +200,9 @@ func silk_NLSF_decode(pNLSF_Q15 []int16, NLSFIndices []int8, psNLSF_CB *NLSFCode
 
 func silk_NLSF_del_dec_quant(indices []int8, x_Q10 []int16, w_Q5 []int16, pred_coef_Q8 []int16, ec_ix []int16, ec_rates_Q5 []int16, quant_step_size_Q16 int, inv_quant_step_size_Q6 int16, mu_Q20 int, order int16) int {
 
-	var i, j, nStates, ind_tmp, ind_min_max, ind_max_min, in_Q10, res_Q10 int
-	var pred_Q10, diff_Q10, out0_Q10, out1_Q10, rate0_Q5, rate1_Q5 int
-	var RD_tmp_Q25, min_Q25, min_max_Q25, max_min_Q25, pred_coef_Q16 int
+	var i, j, nStates, ind_tmp, ind_min_max, ind_max_min, in_Q10 int
+	var out0_Q10, out1_Q10 int
+	var min_Q25, min_max_Q25, max_min_Q25, pred_coef_Q16 int
 	ind_sort := make([]int, SilkConstants.NLSF_QUANT_DEL_DEC_STATES)
 	ind := make([][]int8, SilkConstants.NLSF_QUANT_DEL_DEC_STATES)
 	for i = 0; i < SilkConstants.NLSF_QUANT_DEL_DEC_STATES; i++ {
@@ -213,7 +213,6 @@ func silk_NLSF_del_dec_quant(indices []int8, x_Q10 []int16, w_Q5 []int16, pred_c
 	RD_Q25 := make([]int, 2*SilkConstants.NLSF_QUANT_DEL_DEC_STATES)
 	RD_min_Q25 := make([]int, SilkConstants.NLSF_QUANT_DEL_DEC_STATES)
 	RD_max_Q25 := make([]int, SilkConstants.NLSF_QUANT_DEL_DEC_STATES)
-	var rates_Q5 int
 
 	out0_Q10_table := make([]int, 2*SilkConstants.NLSF_QUANT_MAX_AMPLITUDE_EXT)
 	out1_Q10_table := make([]int, 2*SilkConstants.NLSF_QUANT_MAX_AMPLITUDE_EXT)
@@ -248,52 +247,7 @@ func silk_NLSF_del_dec_quant(indices []int8, x_Q10 []int16, w_Q5 []int16, pred_c
 		pred_coef_Q16 = inlines.Silk_LSHIFT(int(pred_coef_Q8[i]), 8)
 		in_Q10 = int(x_Q10[i])
 
-		for j = 0; j < nStates; j++ {
-			pred_Q10 = inlines.Silk_SMULWB(pred_coef_Q16, int(prev_out_Q10[j]))
-			res_Q10 = int(inlines.Silk_SUB16(int16(in_Q10), int16(pred_Q10)))
-			ind_tmp = inlines.Silk_SMULWB(int(inv_quant_step_size_Q6), res_Q10)
-			ind_tmp = inlines.Silk_LIMIT(ind_tmp, 0-SilkConstants.NLSF_QUANT_MAX_AMPLITUDE_EXT, SilkConstants.NLSF_QUANT_MAX_AMPLITUDE_EXT-1)
-			ind[j][i] = int8(ind_tmp)
-			rates_Q5 = int(ec_ix[i]) + ind_tmp
-
-			// compute outputs for ind_tmp and ind_tmp + 1
-			out0_Q10 = out0_Q10_table[ind_tmp+SilkConstants.NLSF_QUANT_MAX_AMPLITUDE_EXT]
-			out1_Q10 = out1_Q10_table[ind_tmp+SilkConstants.NLSF_QUANT_MAX_AMPLITUDE_EXT]
-
-			out0_Q10 = int(inlines.Silk_ADD16(int16(out0_Q10), int16(pred_Q10)))
-			out1_Q10 = int(inlines.Silk_ADD16(int16(out1_Q10), int16(pred_Q10)))
-			prev_out_Q10[j] = int16(out0_Q10)
-			prev_out_Q10[j+nStates] = int16(out1_Q10)
-
-			// compute RD for ind_tmp and ind_tmp + 1
-			if ind_tmp+1 >= SilkConstants.NLSF_QUANT_MAX_AMPLITUDE {
-				if ind_tmp+1 == SilkConstants.NLSF_QUANT_MAX_AMPLITUDE {
-					rate0_Q5 = int(ec_rates_Q5[rates_Q5+SilkConstants.NLSF_QUANT_MAX_AMPLITUDE])
-					rate1_Q5 = 280
-				} else {
-					rate0_Q5 = inlines.Silk_SMLABB(280-(43*SilkConstants.NLSF_QUANT_MAX_AMPLITUDE), 43, ind_tmp)
-					rate1_Q5 = int(inlines.Silk_ADD16(int16(rate0_Q5), 43))
-				}
-			} else if ind_tmp <= 0-SilkConstants.NLSF_QUANT_MAX_AMPLITUDE {
-				if ind_tmp == 0-SilkConstants.NLSF_QUANT_MAX_AMPLITUDE {
-					rate0_Q5 = 280
-					rate1_Q5 = int(ec_rates_Q5[rates_Q5+1+SilkConstants.NLSF_QUANT_MAX_AMPLITUDE])
-				} else {
-					rate0_Q5 = inlines.Silk_SMLABB(280-43*SilkConstants.NLSF_QUANT_MAX_AMPLITUDE, -43, ind_tmp)
-					rate1_Q5 = int(inlines.Silk_SUB16(int16(rate0_Q5), 43))
-				}
-			} else {
-				rate0_Q5 = int(ec_rates_Q5[rates_Q5+SilkConstants.NLSF_QUANT_MAX_AMPLITUDE])
-				rate1_Q5 = int(ec_rates_Q5[rates_Q5+1+SilkConstants.NLSF_QUANT_MAX_AMPLITUDE])
-			}
-
-			RD_tmp_Q25 = RD_Q25[j]
-			diff_Q10 = int(inlines.Silk_SUB16(int16(in_Q10), int16(out0_Q10)))
-
-			RD_Q25[j] = inlines.Silk_SMLABB(inlines.Silk_MLA(RD_tmp_Q25, inlines.Silk_SMULBB(diff_Q10, diff_Q10), int(w_Q5[i])), mu_Q20, rate0_Q5)
-			diff_Q10 = int(inlines.Silk_SUB16(int16(in_Q10), int16(out1_Q10)))
-			RD_Q25[j+nStates] = inlines.Silk_SMLABB(inlines.Silk_MLA(RD_tmp_Q25, inlines.Silk_SMULBB(diff_Q10, diff_Q10), int(w_Q5[i])), mu_Q20, rate1_Q5)
-		}
+		silk_NLSF_compute_state_candidates(ec_ix, ec_rates_Q5, ind, out0_Q10_table, out1_Q10_table, prev_out_Q10, RD_Q25, w_Q5, i, pred_coef_Q16, inv_quant_step_size_Q6, in_Q10, nStates, mu_Q20)
 
 		if nStates <= (SilkConstants.NLSF_QUANT_DEL_DEC_STATES >> 1) {
 			// double number of states and copy
@@ -390,6 +344,56 @@ func silk_NLSF_del_dec_quant(indices []int8, x_Q10 []int16, w_Q5 []int16, pred_c
 	inlines.OpusAssert(indices[0] <= NLSF_QUANT_MAX_AMPLITUDE_EXT)
 	inlines.OpusAssert(min_Q25 >= 0)
 	return min_Q25
+}
+
+func silk_NLSF_compute_state_candidates(ec_ix []int16, ec_rates_Q5 []int16, ind [][]int8, out0_Q10_table []int, out1_Q10_table []int, prev_out_Q10 []int16, RD_Q25 []int, w_Q5 []int16, i int, pred_coef_Q16 int, inv_quant_step_size_Q6 int16, in_Q10 int, nStates int, mu_Q20 int) {
+	for j := 0; j < nStates; j++ {
+		pred_Q10 := inlines.Silk_SMULWB(pred_coef_Q16, int(prev_out_Q10[j]))
+		res_Q10 := int(inlines.Silk_SUB16(int16(in_Q10), int16(pred_Q10)))
+		ind_tmp := inlines.Silk_SMULWB(int(inv_quant_step_size_Q6), res_Q10)
+		ind_tmp = inlines.Silk_LIMIT(ind_tmp, 0-SilkConstants.NLSF_QUANT_MAX_AMPLITUDE_EXT, SilkConstants.NLSF_QUANT_MAX_AMPLITUDE_EXT-1)
+		ind[j][i] = int8(ind_tmp)
+		rates_Q5 := int(ec_ix[i]) + ind_tmp
+
+		// compute outputs for ind_tmp and ind_tmp + 1
+		out0_Q10 := out0_Q10_table[ind_tmp+SilkConstants.NLSF_QUANT_MAX_AMPLITUDE_EXT]
+		out1_Q10 := out1_Q10_table[ind_tmp+SilkConstants.NLSF_QUANT_MAX_AMPLITUDE_EXT]
+
+		out0_Q10 = int(inlines.Silk_ADD16(int16(out0_Q10), int16(pred_Q10)))
+		out1_Q10 = int(inlines.Silk_ADD16(int16(out1_Q10), int16(pred_Q10)))
+		prev_out_Q10[j] = int16(out0_Q10)
+		prev_out_Q10[j+nStates] = int16(out1_Q10)
+
+		// compute RD for ind_tmp and ind_tmp + 1
+		var rate0_Q5, rate1_Q5 int
+		if ind_tmp+1 >= SilkConstants.NLSF_QUANT_MAX_AMPLITUDE {
+			if ind_tmp+1 == SilkConstants.NLSF_QUANT_MAX_AMPLITUDE {
+				rate0_Q5 = int(ec_rates_Q5[rates_Q5+SilkConstants.NLSF_QUANT_MAX_AMPLITUDE])
+				rate1_Q5 = 280
+			} else {
+				rate0_Q5 = inlines.Silk_SMLABB(280-(43*SilkConstants.NLSF_QUANT_MAX_AMPLITUDE), 43, ind_tmp)
+				rate1_Q5 = int(inlines.Silk_ADD16(int16(rate0_Q5), 43))
+			}
+		} else if ind_tmp <= 0-SilkConstants.NLSF_QUANT_MAX_AMPLITUDE {
+			if ind_tmp == 0-SilkConstants.NLSF_QUANT_MAX_AMPLITUDE {
+				rate0_Q5 = 280
+				rate1_Q5 = int(ec_rates_Q5[rates_Q5+1+SilkConstants.NLSF_QUANT_MAX_AMPLITUDE])
+			} else {
+				rate0_Q5 = inlines.Silk_SMLABB(280-43*SilkConstants.NLSF_QUANT_MAX_AMPLITUDE, -43, ind_tmp)
+				rate1_Q5 = int(inlines.Silk_SUB16(int16(rate0_Q5), 43))
+			}
+		} else {
+			rate0_Q5 = int(ec_rates_Q5[rates_Q5+SilkConstants.NLSF_QUANT_MAX_AMPLITUDE])
+			rate1_Q5 = int(ec_rates_Q5[rates_Q5+1+SilkConstants.NLSF_QUANT_MAX_AMPLITUDE])
+		}
+
+		RD_tmp_Q25 := RD_Q25[j]
+		diff_Q10 := int(inlines.Silk_SUB16(int16(in_Q10), int16(out0_Q10)))
+
+		RD_Q25[j] = inlines.Silk_SMLABB(inlines.Silk_MLA(RD_tmp_Q25, inlines.Silk_SMULBB(diff_Q10, diff_Q10), int(w_Q5[i])), mu_Q20, rate0_Q5)
+		diff_Q10 = int(inlines.Silk_SUB16(int16(in_Q10), int16(out1_Q10)))
+		RD_Q25[j+nStates] = inlines.Silk_SMLABB(inlines.Silk_MLA(RD_tmp_Q25, inlines.Silk_SMULBB(diff_Q10, diff_Q10), int(w_Q5[i])), mu_Q20, rate1_Q5)
+	}
 }
 
 func silk_NLSF_encode(NLSFIndices []int8, pNLSF_Q15 []int16, psNLSF_CB *NLSFCodebook, pW_QW []int16, NLSF_mu_Q20 int, nSurvivors int, signalType int) int {
